@@ -64,7 +64,7 @@ def git_archive(repo, cp, output_dir, treeish, comp_type, comp_level, with_submo
         gbp.log.err("Error generating submodules' archives")
         return False
     except OSError as err:
-        gbp.log.err("Error creating %s: %s" % (output, err[0]))
+        gbp.log.err("Error creating %s: %s" % (output, err.message))
         return False
     except GbpError:
         raise
@@ -163,8 +163,8 @@ def move_old_export(target):
     """move a build tree away if it exists"""
     try:
         os.mkdir(target)
-    except OSError as (e, msg):
-        if e == errno.EEXIST:
+    except OSError as e:
+        if e.errno == errno.EEXIST:
             os.rename(target, "%s.obsolete.%s" % (target, time.time()))
 
 
@@ -210,8 +210,8 @@ def prepare_output_dir(dir):
 
     try:
         os.mkdir(output_dir)
-    except OSError as (e, msg):
-        if e != errno.EEXIST:
+    except OSError as e:
+        if e.errno != errno.EEXIST:
             raise GbpError("Cannot create output dir %s" % output_dir)
     return output_dir
 
