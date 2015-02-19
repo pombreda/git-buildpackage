@@ -84,7 +84,7 @@ class GitRepository(object):
         if ret:
             raise GitRepositoryError(
                 "Failed to get repository state at '%s'" % self.path)
-        self._bare = False if out.strip() != 'true' else True
+        self._bare = False if out.decode('utf-8').strip() != 'true' else True
         self._git_dir = '' if self._bare else '.git'
 
     def __init__(self, path):
@@ -205,7 +205,7 @@ class GitRepository(object):
         except Exception as excobj:
             raise GitRepositoryError("Error running git %s: %s" % (command, excobj))
         if ret:
-            raise GitRepositoryError("Error running git %s: %s" % (command, stderr))
+            raise GitRepositoryError("Error running git %s: %s" % (command, stderr.decode('utf-8')))
 
 
     def _cmd_has_feature(self, command, feature):
@@ -226,7 +226,7 @@ class GitRepository(object):
                                            capture_stderr=True)
         if ret:
             raise GitRepositoryError("Invalid git command '%s': %s"
-                                     % (command, stderr[:-1]))
+                                     % (command, stderr.decode('utf-8')[:-1]))
 
         # Parse git command man page
         section_re = re.compile(r'^(?P<section>[A-Z].*)')
@@ -234,8 +234,9 @@ class GitRepository(object):
         optopt_re = re.compile(r'--\[(?P<prefix>[a-zA-Z\-]+)\]-?')
         man_section = None
         for line in help.splitlines():
-            if man_section == "OPTIONS" and line.startswith('       -'):
-                opts = line.split(',')
+            l = line.decode('utf-8')
+            if man_section == "OPTIONS" and l.startswith('       -'):
+                opts = l.split(',')
                 for opt in opts:
                     opt = opt.strip()
                     match = optopt_re.match(opt)
@@ -247,7 +248,7 @@ class GitRepository(object):
                     if match and match.group('name') == feature:
                         return True
             # Check man section
-            match = section_re.match(line)
+            match = section_re.match(l)
             if match:
                 man_section = match.group('section')
         return False
@@ -344,7 +345,7 @@ class GitRepository(object):
             # We don't append stderr since
             # "fatal: ref HEAD is not a symbolic ref" confuses people
             raise GitRepositoryError("Currently not on a branch")
-        ref = out.split('\n')[0]
+        ref = out.decode('ascii').split('\n')[0]
 
         # Check if ref really exists
         try:
@@ -424,7 +425,8 @@ class GitRepository(object):
         if not ret:
             return self.strip_sha1(sha1)
         else:
-            raise GitRepositoryError("Failed to get common ancestor: %s" % stderr.strip())
+            raise GitRepositoryError("Failed to get common ancestor: %s" %
+                                     stderr.decode('utf-8').strip())
 
     def merge(self, commit, verbose=False, edit=False):
         """
@@ -465,9 +467,10 @@ class GitRepository(object):
             return True, True
 
         for line in out:
-            if line.startswith("<"):
+            l = line.decode('utf-8')
+            if l.startswith("<"):
                 has_local = True
-            elif line.startswith(">"):
+            elif l.startswith(">"):
                 has_remote = True
 
         if has_local and has_remote:
@@ -489,7 +492,7 @@ class GitRepository(object):
         args = [ '--format=%(refname:short)' ]
         args += [ 'refs/remotes/' ] if remote else [ 'refs/heads/' ]
         out = self._git_getoutput('for-each-ref', args)[0]
-        return [ ref.strip() for ref in out ]
+        return [ ref.decode('utf-8').strip() for ref in out ]
 
     def get_local_branches(self):
         """
@@ -550,7 +553,7 @@ class GitRepository(object):
         out, ret =  self._git_getoutput('branch', args.args)
         for line in out:
             # remove prefix '*' for current branch before comparing
-            line = line.replace('*', '')
+            line = line.decode('utf-8').replace('*', '')
             if line.strip() == branch:
                 return True
         return False
@@ -601,7 +604,7 @@ class GitRepository(object):
 
         out = self._git_getoutput('for-each-ref', args.args)[0]
 
-        return out[0].strip()
+        return out[0].decode('utf-8').strip()
 
 #{ Tags
 
@@ -698,7 +701,7 @@ class GitRepository(object):
         if ret:
             raise GitRepositoryError("Can't describe %s. Git error: %s" % \
                                          (commitish, err.strip()))
-        return tag.strip()
+        return tag.decode('utf-8').strip()
 
     def find_tag(self, commit, pattern=None):
         """
@@ -723,7 +726,7 @@ class GitRepository(object):
         @rtype: C{list} of C{str}
         """
         args = [ '-l', pattern ] if pattern else []
-        return [ line.strip() for line in self._git_getoutput('tag', args)[0] ]
+        return [ line.decode('utf-8').strip() for line in self._git_getoutput('tag', args)[0] ]
 
     def verify_tag(self, tag):
         """
@@ -796,7 +799,7 @@ class GitRepository(object):
             # Get a more helpful error message.
             out = self._status(porcelain=False,
                                 ignore_untracked=ignore_untracked)
-            return (False, "".join(out))
+            return (False, ''.join([l.decode('utf-8') for l in out]))
         else:
             return (True, '')
 
@@ -840,7 +843,7 @@ class GitRepository(object):
         if ret:
             raise GitRepositoryError("Can't get repository status: %s" % err)
 
-        elements = out.split('\x00')
+        elements = out.decode('utf-8').split('\x00')
         result = defaultdict(list)
 
         while elements[0] != '':
@@ -882,7 +885,7 @@ class GitRepository(object):
         sha, ret = self._git_getoutput('rev-parse', args.args)
         if ret:
             raise GitRepositoryError("revision '%s' not found" % name)
-        return self.strip_sha1(sha[0], short)
+        return self.strip_sha1(sha[0].decode('utf-8'), short)
 
     @staticmethod
     def strip_sha1(sha1, length=0):
@@ -957,7 +960,7 @@ class GitRepository(object):
                                             capture_stderr=True)
         if ret:
             raise GitRepositoryError("Can't write out current index: %s" % stderr[:-1])
-        return tree.strip()
+        return tree.decode('ascii').strip()
 
     def make_tree(self, contents):
         """
@@ -973,11 +976,11 @@ class GitRepository(object):
 
         sha1, err, ret =  self._git_inout('mktree',
                                           args.args,
-                                          out,
+                                          bytes(out, 'utf-8'),
                                           capture_stderr=True)
         if ret:
             raise GitRepositoryError("Failed to mktree: '%s'" % err)
-        return self.strip_sha1(sha1)
+        return self.strip_sha1(sha1.decode('utf-8'))
 
     def get_obj_type(self, obj):
         """
@@ -991,7 +994,7 @@ class GitRepository(object):
         out, ret = self._git_getoutput('cat-file', args=['-t', obj])
         if ret:
             raise GitRepositoryError("Not a Git repository object: '%s'" % obj)
-        return out[0].strip()
+        return out[0].decode('utf-8').strip()
 
     def list_tree(self, treeish, recurse=False, paths=None):
         """
@@ -1016,7 +1019,7 @@ class GitRepository(object):
             raise GitRepositoryError("Failed to ls-tree '%s': '%s'" % (treeish, err))
 
         tree = []
-        for line in out.split('\0'):
+        for line in out.decode('utf-8').split('\0'):
             if line:
                 tree.append(line.split(None, 3))
         return tree
@@ -1033,7 +1036,7 @@ class GitRepository(object):
         """
         value, ret = self._git_getoutput('config', [ name ])
         if ret: raise KeyError
-        return value[0][:-1] # first line with \n ending removed
+        return value[0].decode('utf-8')[:-1] # first line with \n ending removed
 
     def get_author_info(self):
         """
@@ -1071,21 +1074,23 @@ class GitRepository(object):
         # Get information about all remotes
         remotes = {}
         for remote in out.splitlines():
-            out, err, _ret = self._git_inout('remote', ['show', '-n', remote],
+            r = remote.decode('utf-8')
+            out, err, _ret = self._git_inout('remote', ['show', '-n', r],
                                              capture_stderr=True)
             if ret:
                 raise GitRepositoryError('Failed to get information for remote '
-                                         '%s: %s' % (remote, err))
+                                         '%s: %s' % (r, err))
             fetch_url = None
             push_urls = []
             for line in out.splitlines():
-                match = re.match('\s*Fetch\s+URL:\s*(\S.*)', line)
+                l = line.decode('utf-8')
+                match = re.match('\s*Fetch\s+URL:\s*(\S.*)', l)
                 if match:
                     fetch_url = match.group(1)
-                match = re.match('\s*Push\s+URL:\s*(\S.*)', line)
+                match = re.match('\s*Push\s+URL:\s*(\S.*)', l)
                 if match:
                     push_urls.append(match.group(1))
-            remotes[remote] = GitRemote(remote, fetch_url, push_urls)
+            remotes[r] = GitRemote(r, fetch_url, push_urls)
 
         return remotes
 
@@ -1099,7 +1104,7 @@ class GitRepository(object):
         @rtype: C{list} of C{str}
         """
         out = self._git_getoutput('remote')[0]
-        return [ remote.strip() for remote in out ]
+        return [ remote.decode('utf-8').strip() for remote in out ]
 
     def has_remote_repo(self, name):
         """
@@ -1296,7 +1301,7 @@ class GitRepository(object):
         if ret:
             raise GitRepositoryError("Error listing files: '%d'" % ret)
         if out:
-            return [ file for file in out[0].split('\0') if file ]
+            return [ file for file in out[0].decode('utf-8').split('\0') if file ]
         else:
             return []
 
@@ -1320,9 +1325,9 @@ class GitRepository(object):
                                             args.args,
                                             capture_stderr=True)
         if not ret:
-            return self.strip_sha1(sha1)
+            return self.strip_sha1(sha1.decode('utf-8'))
         else:
-            raise GbpError("Failed to hash %s: %s" % (filename, stderr))
+            raise GbpError("Failed to hash %s: %s" % (filename, stderr.decode('utf-8')))
 #}
 
 #{ Comitting
@@ -1430,10 +1435,11 @@ class GitRepository(object):
 
         commit = self.commit_tree(tree=tree, msg=msg, parents=parents,
                                   author=author, committer=committer)
+        str = commit.decode('ascii')
         if not commit:
             raise GitRepositoryError("Failed to commit tree")
-        self.update_ref("refs/heads/%s" % branch, commit, cur)
-        return commit
+        self.update_ref("refs/heads/%s" % branch, str, cur)
+        return str
 
     def commit_tree(self, tree, msg, parents, author={}, committer={}):
         """
@@ -1460,7 +1466,7 @@ class GitRepository(object):
             args += [ '-p' , parent ]
         sha1, stderr, ret = self._git_inout('commit-tree',
                                             args,
-                                            msg,
+                                            bytes(msg, 'utf-8'),
                                             extra_env,
                                             capture_stderr=True)
         if not ret:
@@ -1507,15 +1513,15 @@ class GitRepository(object):
             where = " on %s" % paths if paths else ""
             raise GitRepositoryError("Error getting commits %s..%s%s" %
                         (since, until, where))
-        return [ commit.strip() for commit in commits ]
+        return [ commit.decode('ascii').strip() for commit in commits ]
 
     def show(self, id):
         """git-show id"""
         obj, stderr, ret = self._git_inout('show', ["--pretty=medium", id],
                                               capture_stderr=True)
         if ret:
-            raise GitRepositoryError("can't get %s: %s" % (id, stderr.rstrip()))
-        return obj
+            raise GitRepositoryError("can't get %s: %s" % (id, stderr.decode('utf-8').rstrip()))
+        return obj.decode('utf-8')
 
     def grep_log(self, regex, since=None):
         """
@@ -1536,9 +1542,9 @@ class GitRepository(object):
                                               capture_stderr=True)
         if ret:
             raise GitRepositoryError("Error grepping log for %s: %s" %
-                                     (regex, stderr[:-1]))
+                                     (regex, stderr.decode('utf-8')[:-1]))
         if stdout:
-            return [ commit.strip() for commit in stdout.split('\n')[::-1] ]
+            return [ commit.strip() for commit in stdout.decode('utf-8').split('\n')[::-1] ]
         else:
             return []
 
@@ -1572,7 +1578,7 @@ class GitRepository(object):
             raise GitRepositoryError("Unable to retrieve commit info for %s"
                                      % commitish)
 
-        fields = out.split('\x00')
+        fields = out.decode('utf-8').split('\x00')
 
         author = GitModifier(fields[0].strip(),
                              fields[1].strip(),
@@ -1674,7 +1680,7 @@ class GitRepository(object):
         output, stderr, ret = self._git_inout('diff', options.args)
         if ret:
             raise GitRepositoryError("Git diff failed")
-        return output
+        return output.decode('utf-8')
 
     def diff_status(self, obj1, obj2):
         """
@@ -1690,7 +1696,7 @@ class GitRepository(object):
         options = GitArgs('--name-status', '-z', obj1, obj2)
         output, stderr, ret = self._git_inout('diff', options.args)
 
-        elements = output.split('\x00')
+        elements = output.decode('utf-8').split('\x00')
         result = defaultdict(list)
 
         while elements[0] != '':
@@ -1810,7 +1816,8 @@ class GitRepository(object):
 
         out, ret =  self._git_getoutput('ls-tree', args, cwd=path)
         for line in out:
-            mode, objtype, commit, name = line[:-1].split(None, 3)
+            l = line.decode('utf-8')
+            mode, objtype, commit, name = l[:-1].split(None, 3)
             # A submodules is shown as "commit" object in ls-tree:
             if objtype == "commit":
                 nextpath = os.path.join(path, name)
@@ -1863,7 +1870,7 @@ class GitRepository(object):
             return klass(abspath)
         except OSError as err:
             raise GitRepositoryError("Cannot create Git repository at '%s': %s"
-                                     % (abspath, err[1]))
+                                     % (abspath, err.args[1]))
         return None
 
     @classmethod
